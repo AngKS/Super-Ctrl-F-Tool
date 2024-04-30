@@ -1,0 +1,30 @@
+{
+  "name": "vue_extension",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "serve": "vite preview",
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mdi/font": "5.9.55",
+    "axios": "^1.6.7",
+    "moment": "^2.30.1",
+    "roboto-fontface": "*",
+    "uuid": "^9.0.1",
+    "vue": "^3.4.3",
+    "vuetify": "^3.5.17",
+    "webfontloader": "^1.0.0"
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-optional-chaining-assign": "^7.23.7",
+    "@vitejs/plugin-vue": "^3.0.3",
+    "@vue/compiler-sfc": "^3.0.4",
+    "vite": "^3.2.10",
+    "vite-plugin-vuetify": "^1.0.0-alpha.12",
+    "vue-cli-plugin-vuetify": "~2.5.8"
+  },
+  "type": "module"
+}
