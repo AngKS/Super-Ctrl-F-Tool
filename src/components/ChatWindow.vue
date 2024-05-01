@@ -13,8 +13,10 @@
         >
             {{ pageContent }}
             <v-list>
-                <v-list-item>
-                    <v-list-item-title class="font-weight-medium">Parsing...</v-list-item-title>
+                <v-list-item
+                    v-if="currMode == 'ask' && queryAnswer.length === 0"
+                >
+                    <v-list-item-title class="font-weight-bold">Parsing...</v-list-item-title>
                     <v-chip>
                         <v-avatar
                             color="transparent"
@@ -32,10 +34,20 @@
                     </v-chip>
                 </v-list-item>
                 <v-list-item
+                    v-else
+                >
+                    <v-list-item-title class="font-weight-bold">{{ queryAnswer[0].question }}</v-list-item-title>
+                </v-list-item>
+                
+                <v-list-item
                 >
                     <v-list-item-content>
-                        <v-list-item-title class="font-weight-medium">Serch Results</v-list-item-title>
-                        <v-list-item-subtitle class="text-caption">{{ page_content }}</v-list-item-subtitle>
+                        <!-- <v-list-item-title class="font-weight-medium">Search Results</v-list-item-title> -->
+                        <p
+                            style="max-height: 300px; overflow-y: scroll;"
+                            class="text-subtitle-2 font-weight-light"
+                        >{{ output }}</p>
+                        
                     </v-list-item-content>
                 </v-list-item>
             </v-list>
@@ -62,19 +74,19 @@
                         @click="closeWindow"
                     ></v-btn>
                     <v-btn
-                        v-show="searchQuery !== '' && !searched && !loading"
+                        v-if="searchQuery !== '' && searched && !loading && wordsFound === 0"
                         variant="flat"
                         color="blue-darken-3"
                         size="small"
-                        @click="search"
+                        @click="smarterSearch()"
                     >Ask</v-btn>
                     <v-list-item-subtitle
-                        v-show="searchQuery !== '' && searched && !loading"
+                        v-if="searchQuery !== '' && searched && !loading && wordsFound > 0"
                         class="text-subtitle-2 text--secondary font-weight-medium"
                         style="white-space: nowrap;"
                     >{{ wordsFound }} Found</v-list-item-subtitle>
                     <v-progress-circular
-                        v-show="loading"
+                        v-if="loading"
                         size="20"
                         color="blue-darken-3"
                         indeterminate
@@ -87,23 +99,36 @@
 
 
 <script>
+import { CheerioWebBaseLoader } from "langchain/document_loaders/web/cheerio";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { ConversationalRetrievalQAChain } from "langchain/chains";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import { BufferMemory } from "langchain/memory";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { CohereEmbeddings } from "@langchain/cohere";
+
 export default {
     name: 'ChatWindow',
     props: {
     },
     data() {
         return {
+            ANTHROPIC_KEY: "",
+            COHERE_KEY: "",
             searchQuery: '',
+            searchModes: ['search', 'ask'],
+            currMode: 'search',
             searched: false,
             searchTitle: '',
             pageFavicon: '',
             pageTitle: '',
+            pageURL: '',
             queryAnswer: [],
-            page_content: '',
-            wordsFound: 0,
+            wordsFound: null,
             pageLoaded: false,
             loading: false,
             pageContent: '',
+            output: '',
         }
     },
     watch: {
@@ -120,11 +145,98 @@ export default {
             else{
                 this.search()
             }
-        }
+        },
     },
     methods: {
 
-        smarterSearch(){},
+        async smarterSearch(){
+            this.loading = true;
+            this.currMode = 'ask';
+            console.log("SMARTER SEARCH!");
+            const model = new ChatAnthropic({
+                temperature: 0.3,
+                streaming: true,
+                model: "claude-3-sonnet-20240229",
+                apiKey: this.ANTHROPIC_KEY,
+            });
+
+
+            // 1. Document indexing
+            const loader = new CheerioWebBaseLoader(this.pageURL)
+            console.log("====> 0. Webpage loader created", this.pageURL)
+            const docs = await loader.load()
+            console.log("====> 1. Webpage loaded")
+            // 2. Split texts
+            const splitter = new RecursiveCharacterTextSplitter({
+                chunkSize: 3000,
+                chunkOverlap: 1500,
+            })
+            const splittedDocs = await splitter.splitDocuments(docs);
+            console.log("====> 2. Texts splitted")
+
+            const embeddings = new CohereEmbeddings({
+                apiKey: this.COHERE_KEY,
+                batchsize: 48
+            })
+
+            const vectorStore = await MemoryVectorStore.fromDocuments(
+                splittedDocs,
+                embeddings,
+                {
+                    chunkSize: 3000,
+                    chunkOverlap: 1500,
+                }
+            )
+
+            const chain = ConversationalRetrievalQAChain.fromLLM(
+                model,
+                vectorStore.asRetriever(),
+                {
+                    returnSourceDocuments: true,
+                    memory: new BufferMemory({
+                    memoryKey: "chat_history",
+                    inputKey: "question",
+                    outputKey: "text",
+                    returnMessages: true, 
+                    }),
+                    questionGeneratorChainOptions: {
+                    llm: model
+                    }
+                }
+            );
+
+            console.log("====> 5. Chain created")
+
+            console.log("Answer:", docs);
+
+            try {
+                const res = await chain.call(
+                    {question: this.searchQuery}
+                );
+                console.log("result", res)
+                this.output = res.text;
+                this.queryAnswer.push({
+                    question: this.searchQuery,
+                    answer: this.output,
+                    responseObject: res,
+                    source: this.pageURL,
+                });
+                
+                
+
+            } catch (e) {
+                return `I'm sorry there has been an error: ${e}`
+            }
+            this.searchQuery = '';
+            this.searched = false;
+            this.wordsFound = null;
+            this.loading = false;
+            return
+        
+
+            
+
+        },
 
 
         search(){
@@ -199,14 +311,6 @@ export default {
     beforeMount() {
         // fetch webpage content
         chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-            // chrome.tabs.sendMessage(tabs[0].id, {action: 'loadContent'}, (response) => {
-            //     if (response){
-            //         this.pageContent = response.data
-            //     }
-            //     return
-            // })
-            
-            // message background.js to fetch the page content
             chrome.runtime.sendMessage({ action: 'loadContent' }, (response) => {
                 if (response){
                     this.pageContent = response.data
@@ -230,6 +334,13 @@ export default {
         });
 
         console.log("Page Content:", this.pageContent)
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const currTab = tabs[0];
+            console.log("Current Tab:", currTab)
+            this.pageTitle = currTab.title;
+            this.pageURL = currTab.url;
+            this.pageFavicon = currTab.favIconUrl
+        });
         
     },
     beforeDestroy() {

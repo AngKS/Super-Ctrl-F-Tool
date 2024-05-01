@@ -4,10 +4,8 @@
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'checkPageLoad') {
-        console.log('Received checkPageLoad message');
 
         chrome.tabs.executeScript(sender.tab.id, { code: 'document.readyState' }, (results) => {
-            console.log('Results from executeScript:', results); 
             if (results && results[0]) {
                 sendResponse({ readyState: results[0] });
             } else {
@@ -21,13 +19,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
     else if (request.action === "loadContent"){
         const document_content = document.body.innerText
-        console.log("DOC CONTEN:", document_content)
         return sendResponse({message: "loaded", data: document_content})
     }
 
     else if (request.action === "highlight"){
         const word = request.word
-        console.log("CONTENT", word)
         if (word){
             const regex = new RegExp('(' + word + ')', 'gi')
             clearHighlights()
@@ -71,7 +67,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     else if (request.action === "clearHighlights"){
-        console.log("clearing highlights")
         clearHighlights()
         sendResponse({message: "cleared"})
     }
